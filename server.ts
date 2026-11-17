@@ -10,7 +10,7 @@ import {
   evaluateCodePayload,
   generateExercisePayload,
   reviewCodePayload,
-} from './server/apiHandlers';
+} from './api/_lib/apiHandlers.js';
 
 dotenv.config();
 

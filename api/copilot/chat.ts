@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { chatCopilotPayload, runVercelPostHandler } from '../../server/apiHandlers';
+import { chatCopilotPayload, runVercelPostHandler } from '../_lib/apiHandlers.js';
 
 export default async function handler(
   req: IncomingMessage & { body?: unknown; method?: string },

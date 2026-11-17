@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { reviewCodePayload, runVercelPostHandler } from '../../server/apiHandlers';
+import { reviewCodePayload, runVercelPostHandler } from '../_lib/apiHandlers.js';
 
 export default async function handler(
   req: IncomingMessage & { body?: unknown; method?: string },
