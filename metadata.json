@@ -1,0 +1,6 @@
+{
+  "name": "JavaLabs",
+  "description": "Plataforma interativa de exercícios de Java por módulo com Copilot, análise linha a linha e feedback do que melhorar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
