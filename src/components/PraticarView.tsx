@@ -5,7 +5,6 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronRight,
-  Database,
   RotateCcw,
   Sparkles,
   Terminal,
@@ -23,6 +22,7 @@ import type {
 } from '../types/javalab';
 import type { TrackMetadata } from '../data/extraTracks';
 import { CodeEditor } from './CodeEditor';
+import { SpreadsheetPreview } from './SpreadsheetPreview';
 
 interface PraticarViewProps {
   activeTrack: LanguageTrack;
@@ -254,48 +254,12 @@ export function PraticarView({
             </div>
           )}
 
-          {/* Dados fornecidos pelo site (Planilhas GAS / Scraping / Pandas) */}
+          {/* Planilha / Tabela fornecida pelo site (Planilhas GAS / Scraping / Pandas) */}
           {currentExercise.datasetTable && (
-            <div className="mt-5" data-testid="exercise-dataset-table">
-              <div className="flex items-center gap-1.5">
-                <Database className="h-3.5 w-3.5 text-[#F97316]" />
-                <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[#F97316]">
-                  Dados fornecidos · {currentExercise.datasetTable.sheetName}
-                </h2>
-              </div>
-              {currentExercise.datasetTable.description && (
-                <p className="mt-1 text-[11px] text-[#8C8C9B] leading-relaxed">
-                  {currentExercise.datasetTable.description}
-                </p>
-              )}
-              <div className="mt-2.5 space-y-2">
-                {currentExercise.datasetTable.rows.map((row, rIdx) => (
-                  <div
-                    key={rIdx}
-                    className="rounded-lg border border-[#22222A] bg-[#0D0D10] px-3 py-2.5"
-                  >
-                    <div className="mb-1.5 flex items-center justify-between text-[10px] font-mono text-[#7C7C8C]">
-                      <span>Linha {rIdx + 2}</span>
-                      <span>{currentExercise.datasetTable?.sheetName}</span>
-                    </div>
-                    <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
-                      {currentExercise.datasetTable!.columns.map((col, cIdx) => {
-                        const val = row[cIdx] || '—';
-                        const spanFull = val.length > 22 || col.length > 20;
-                        return (
-                          <div key={cIdx} className={spanFull ? 'col-span-2' : 'min-w-0'}>
-                            <dt className="text-[10px] text-[#7C7C8C] truncate">{col}</dt>
-                            <dd className="font-mono text-[#E4E4EA] break-words leading-snug">
-                              {val}
-                            </dd>
-                          </div>
-                        );
-                      })}
-                    </dl>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <SpreadsheetPreview
+              datasetTable={currentExercise.datasetTable}
+              track={currentExercise.track}
+            />
           )}
 
           {/* Exemplos */}

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Cloud,
   CloudOff,
+  ExternalLink,
   Loader2,
   LogOut,
   RefreshCw,
@@ -74,6 +75,8 @@ export function AuthModal({
 
   const isBusy = isAuthenticating || syncStatus === 'syncing';
   const activeError = authError || syncError;
+  const appUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
   const initials = (user?.displayName || user?.email || 'J')
     .trim()
     .split(/\s+/)
@@ -199,6 +202,18 @@ export function AuthModal({
               >
                 Continuar sem login (apenas navegador local)
               </button>
+
+              {(isInsideIframe || Boolean(activeError)) && appUrl && (
+                <a
+                  href={appUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-[#F97316] hover:bg-[#F97316]/10 transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span>Abrir aplicativo em uma nova aba</span>
+                </a>
+              )}
             </div>
           </div>
         ) : (

@@ -4,7 +4,6 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronRight,
-  Database,
   Search,
   Sparkles,
   X,
@@ -25,6 +24,7 @@ import {
   filterModules,
   getModuleExercisesByDifficulty,
 } from '../utils/labLogic';
+import { SpreadsheetPreview } from './SpreadsheetPreview';
 
 interface TrilhaViewProps {
   activeTrack: LanguageTrack;
@@ -182,14 +182,11 @@ export function TrilhaView({
             </p>
 
             {continueExercise.datasetTable && (
-              <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#24242D] bg-[#101015] px-3 py-2 text-xs text-[#C4C4D0]">
-                <Database className="h-3.5 w-3.5 text-[#F97316] shrink-0" />
-                <span>
-                  Base fornecida pelo site:{' '}
-                  <strong className="text-white">{continueExercise.datasetTable.sheetName}</strong> (
-                  {continueExercise.datasetTable.rows.length} linhas)
-                </span>
-              </div>
+              <SpreadsheetPreview
+                datasetTable={continueExercise.datasetTable}
+                track={activeTrack}
+                compact
+              />
             )}
 
             <pre className="mt-4 overflow-x-auto rounded-lg border border-[#22222A] bg-[#0B0B0D] px-4 py-3 font-mono text-xs text-[#D4D4DC] leading-relaxed">
