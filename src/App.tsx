@@ -228,6 +228,32 @@ function loadInitialState(): PersistedLabState {
   }
 }
 
+async function parseApiJson<T>(res: Response, fallbackError: string): Promise<T> {
+  const rawText = await res.text();
+  let parsed: (T & { error?: string }) | null = null;
+
+  if (rawText.trim()) {
+    try {
+      parsed = JSON.parse(rawText) as T & { error?: string };
+    } catch {
+      const preview = rawText.replace(/\s+/g, ' ').trim().slice(0, 80);
+      throw new Error(
+        `A API retornou uma resposta inválida (HTTP ${res.status}: "${preview}"). Verifique se as funções /api/* estão publicadas e se GEMINI_API_KEY está configurada no servidor.`
+      );
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(parsed?.error || `${fallbackError} (HTTP ${res.status})`);
+  }
+
+  if (!parsed) {
+    throw new Error(`${fallbackError} (resposta vazia do servidor).`);
+  }
+
+  return parsed;
+}
+
 export default function App() {
   const [persisted, setPersisted] = useState<PersistedLabState>(loadInitialState);
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
@@ -540,12 +566,10 @@ export default function App() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Falha ao avaliar código.');
-      }
-
-      const evalResult = data as EvaluationResult;
+      const evalResult = await parseApiJson<EvaluationResult>(
+        res,
+        'Falha ao avaliar código.'
+      );
       const findings = Array.isArray(evalResult.findings) ? evalResult.findings : [];
       const improvements = Array.isArray(evalResult.improvementsForEnunciado)
         ? evalResult.improvementsForEnunciado
@@ -639,10 +663,11 @@ export default function App() {
           exercise: currentExercise,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Falha ao revisar código com Copilot.');
-      }
+      const data = await parseApiJson<{
+        findings?: CopilotFinding[];
+        improvementsForEnunciado?: ImprovementHint[];
+        qualityScore?: number;
+      }>(res, 'Falha ao revisar código com Copilot.');
 
       const nextScore =
         typeof data.qualityScore === 'number'
@@ -703,10 +728,10 @@ export default function App() {
           findings: activeFindings,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Erro ao enviar pergunta ao Copilot.');
-      }
+      const data = await parseApiJson<{ reply: string }>(
+        res,
+        'Erro ao enviar pergunta ao Copilot.'
+      );
 
       const assistantMsg: CopilotChatMessage = {
         id: `chat-a-${Date.now()}`,
@@ -757,10 +782,18 @@ export default function App() {
           weakPatterns: focusWeakPoints ? trackRecurringPatterns.slice(0, 3) : [],
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Falha ao gerar exercício personalizado.');
-      }
+      const data = await parseApiJson<{
+        title?: string;
+        estimatedMinutes?: number;
+        prompt: string;
+        formula?: string;
+        datasetTable?: Exercise['datasetTable'];
+        examples?: Exercise['examples'];
+        requirements?: string[];
+        starterCode?: string;
+        preloadedImprovements?: Exercise['preloadedImprovements'];
+        focusTags?: Exercise['focusTags'];
+      }>(res, 'Falha ao gerar exercício personalizado.');
 
       const existingCount = allExercises.filter((ex) => ex.moduleId === moduleId).length;
       const newExercise: Exercise = {
