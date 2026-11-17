@@ -1,0 +1,244 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pilar 0: Bloqueio padrão global (Global Safety Net)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // === Primitivas Endurecidas ===
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidTrack(track) {
+      return track is string && track.size() <= 20 && track in ['java', 'javascript', 'appscript', 'python'];
+    }
+
+    function isValidDifficulty(diff) {
+      return diff is string && diff.size() <= 20 && diff in ['Fácil', 'Médio', 'Difícil'];
+    }
+
+    function isValidScore(score) {
+      return (score is int || score is float) && score >= 0 && score <= 100;
+    }
+
+    function hasUserParent(userId) {
+      return existsAfter(/databases/$(database)/documents/users/$(userId));
+    }
+
+    // === Validadores Blueprint (Anti-Update-Gap) ===
+    function isValidUserState(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'activeTrack',
+          'currentJavaExerciseId',
+          'currentJsExerciseId',
+          'currentGasExerciseId',
+          'currentPyExerciseId',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'activeTrack',
+          'currentJavaExerciseId',
+          'currentJsExerciseId',
+          'currentGasExerciseId',
+          'currentPyExerciseId',
+          'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        isValidTrack(data.activeTrack) &&
+        isValidId(data.currentJavaExerciseId) &&
+        isValidId(data.currentJsExerciseId) &&
+        isValidId(data.currentGasExerciseId) &&
+        isValidId(data.currentPyExerciseId) &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidPrivateProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120 &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    function isValidActivityProgress(data, userId, atividadeId) {
+      return data.keys().hasAll([
+          'userId',
+          'id_atividade',
+          'track',
+          'pontuacao',
+          'resolvido',
+          'codigo_salvo',
+          'concluido_em',
+          'atualizado_em'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'id_atividade',
+          'track',
+          'pontuacao',
+          'resolvido',
+          'codigo_salvo',
+          'concluido_em',
+          'atualizado_em'
+        ]) &&
+        isValidId(data.userId) &&
+        data.userId == userId &&
+        data.userId == request.auth.uid &&
+        isValidId(data.id_atividade) &&
+        data.id_atividade == atividadeId &&
+        isValidTrack(data.track) &&
+        isValidScore(data.pontuacao) &&
+        data.resolvido is bool &&
+        data.codigo_salvo is string && data.codigo_salvo.size() <= 25000 &&
+        ((data.resolvido == false && data.concluido_em == null) ||
+         (data.resolvido == true && data.concluido_em is timestamp)) &&
+        data.atualizado_em is timestamp &&
+        data.atualizado_em == request.time;
+    }
+
+    function isValidSubmission(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'id_atividade',
+          'track',
+          'titulo',
+          'dificuldade',
+          'pontuacao',
+          'aprovado',
+          'testes_passados',
+          'testes_total',
+          'codigo',
+          'criado_em'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'id_atividade',
+          'track',
+          'titulo',
+          'dificuldade',
+          'pontuacao',
+          'aprovado',
+          'testes_passados',
+          'testes_total',
+          'codigo',
+          'criado_em'
+        ]) &&
+        isValidId(data.userId) &&
+        data.userId == userId &&
+        data.userId == request.auth.uid &&
+        isValidId(data.id_atividade) &&
+        isValidTrack(data.track) &&
+        data.titulo is string && data.titulo.size() >= 1 && data.titulo.size() <= 200 &&
+        isValidDifficulty(data.dificuldade) &&
+        isValidScore(data.pontuacao) &&
+        data.aprovado is bool &&
+        data.testes_passados is int && data.testes_passados >= 0 && data.testes_passados <= 100 &&
+        data.testes_total is int && data.testes_total >= 0 && data.testes_total <= 100 &&
+        data.codigo is string && data.codigo.size() <= 25000 &&
+        data.criado_em is timestamp &&
+        data.criado_em == request.time;
+    }
+
+    // === Coleção Raiz: Estado do Usuário ===
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserState(incoming(), userId);
+      allow update: if isOwner(userId) && isValidId(userId) && isValidUserState(incoming(), userId) && (
+        // Ação: atualizar trilha ativa ou exercício selecionado
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'activeTrack',
+          'currentJavaExerciseId',
+          'currentJsExerciseId',
+          'currentGasExerciseId',
+          'currentPyExerciseId',
+          'updatedAt'
+        ]) &&
+        incoming().uid == existing().uid
+      );
+      allow delete: if false;
+
+      // Subcoleção Isolada de PII
+      match /private/{docId} {
+        allow get: if docId == 'profile' && isValidId(userId) && isOwner(userId);
+        allow list: if false;
+        allow create: if docId == 'profile' && isOwner(userId) && isValidId(userId) &&
+          isValidPrivateProfile(incoming(), userId) && hasUserParent(userId);
+        allow update: if docId == 'profile' && isOwner(userId) && isValidId(userId) &&
+          isValidPrivateProfile(incoming(), userId) &&
+          hasUserParent(userId) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName', 'updatedAt']) &&
+          incoming().uid == existing().uid;
+        allow delete: if false;
+      }
+
+      // Subcoleção: Progresso por Atividade (id_atividade, pontuacao, concluido_em)
+      match /progress/{atividadeId} {
+        allow get: if isValidId(userId) && isValidId(atividadeId) && isOwner(userId) &&
+          exists(/databases/$(database)/documents/users/$(userId));
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(atividadeId) &&
+          isValidActivityProgress(incoming(), userId, atividadeId) &&
+          (incoming().resolvido == false || incoming().concluido_em == request.time) &&
+          hasUserParent(userId);
+        allow update: if isOwner(userId) && isValidId(userId) && isValidId(atividadeId) &&
+          isValidActivityProgress(incoming(), userId, atividadeId) &&
+          hasUserParent(userId) &&
+          incoming().userId == existing().userId &&
+          incoming().id_atividade == existing().id_atividade &&
+          incoming().track == existing().track && (
+            // Ação 1: Salvar rascunho de código ou pontuação mantendo status
+            (existing().resolvido == false && incoming().resolvido == false &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['codigo_salvo', 'pontuacao', 'atualizado_em'])) ||
+            // Ação 2: Concluir atividade pela primeira vez (grava concluido_em == request.time)
+            (existing().resolvido == false && incoming().resolvido == true &&
+              incoming().concluido_em == request.time &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['codigo_salvo', 'pontuacao', 'resolvido', 'concluido_em', 'atualizado_em'])) ||
+            // Ação 3: Atividade já concluída (preserva concluido_em imutável e pontuação não regressiva)
+            (existing().resolvido == true && incoming().resolvido == true &&
+              incoming().concluido_em == existing().concluido_em &&
+              incoming().pontuacao >= existing().pontuacao &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['codigo_salvo', 'pontuacao', 'atualizado_em']))
+          );
+        allow delete: if false;
+      }
+
+      // Subcoleção: Histórico Imutável de Submissões
+      match /submissions/{submissionId} {
+        allow get: if isValidId(userId) && isValidId(submissionId) && isOwner(userId) &&
+          exists(/databases/$(database)/documents/users/$(userId));
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        allow create: if isOwner(userId) && isValidId(userId) && isValidId(submissionId) &&
+          isValidSubmission(incoming(), userId) && hasUserParent(userId);
+        allow update, delete: if false;
+      }
+    }
+  }
+}

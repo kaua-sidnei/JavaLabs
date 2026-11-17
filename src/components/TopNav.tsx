@@ -1,4 +1,6 @@
-import { ArrowLeft, Code2, Play, Send } from 'lucide-react';
+import type { User } from 'firebase/auth';
+import { ArrowLeft, Cloud, CloudOff, Code2, Loader2, Play, Send, User as UserIcon } from 'lucide-react';
+import type { CloudSyncStatus } from '../hooks/useAuthProgress';
 import type { ActiveTab, Exercise, JavaModule } from '../types/javalab';
 
 interface TopNavProps {
@@ -14,6 +16,88 @@ interface TopNavProps {
   onRunTests?: () => void;
   onSubmitSolution?: () => void;
   isEvaluating?: boolean;
+  user?: User | null;
+  syncStatus?: CloudSyncStatus;
+  onOpenAuthModal?: () => void;
+}
+
+function AccountButton({
+  user,
+  syncStatus,
+  onClick,
+  compact = false,
+}: {
+  user?: User | null;
+  syncStatus?: CloudSyncStatus;
+  onClick?: () => void;
+  compact?: boolean;
+}) {
+  const firstName = user?.displayName?.trim().split(/\s+/)[0] || user?.email?.split('@')[0] || 'Conta';
+
+  const statusDot =
+    syncStatus === 'syncing' ? (
+      <Loader2 className="h-3 w-3 animate-spin text-[#F97316] shrink-0" />
+    ) : syncStatus === 'error' ? (
+      <CloudOff className="h-3 w-3 text-[#F87171] shrink-0" />
+    ) : user ? (
+      <span className="h-2 w-2 rounded-full bg-[#22C55E] shrink-0" aria-hidden="true" />
+    ) : (
+      <Cloud className="h-3.5 w-3.5 text-[#F97316] shrink-0" />
+    );
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={user ? `Conta conectada: ${firstName}` : 'Entrar com Google e sincronizar'}
+        title={user ? `Conta: ${firstName}` : 'Entrar e sincronizar na nuvem'}
+        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#2A2A32] bg-[#16161B] px-2.5 text-xs font-medium text-[#E4E4EA] hover:border-[#F97316]/50 hover:text-white transition-colors whitespace-nowrap shrink-0"
+      >
+        {user?.photoURL ? (
+          <img
+            src={user.photoURL}
+            alt={firstName}
+            referrerPolicy="no-referrer"
+            className="h-4 w-4 rounded-full object-cover shrink-0"
+          />
+        ) : (
+          <UserIcon className="h-3.5 w-3.5 text-[#A1A1AA] shrink-0" />
+        )}
+        {statusDot}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-lg border border-[#27272F] bg-[#141418] px-3 py-1.5 text-xs font-medium text-[#E4E4EA] hover:border-[#F97316]/50 hover:text-white transition-colors whitespace-nowrap shrink-0"
+    >
+      {user ? (
+        <>
+          {user.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt={firstName}
+              referrerPolicy="no-referrer"
+              className="h-4 w-4 rounded-full object-cover shrink-0"
+            />
+          ) : (
+            <UserIcon className="h-3.5 w-3.5 text-[#A1A1AA] shrink-0" />
+          )}
+          <span className="max-w-[96px] truncate">{firstName}</span>
+          {statusDot}
+        </>
+      ) : (
+        <>
+          {statusDot}
+          <span>Entrar</span>
+        </>
+      )}
+    </button>
+  );
 }
 
 export function TopNav({
@@ -29,6 +113,9 @@ export function TopNav({
   onRunTests,
   onSubmitSolution,
   isEvaluating,
+  user,
+  syncStatus,
+  onOpenAuthModal,
 }: TopNavProps) {
   if (activeTab === 'praticar' && currentModule && currentExercise) {
     const pos = exercisePosition ?? currentExercise.orderInModule;
@@ -77,7 +164,7 @@ export function TopNav({
             </nav>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onPreviousExercise}
@@ -107,6 +194,15 @@ export function TopNav({
               <Send className="h-3.5 w-3.5" />
               <span>{isEvaluating ? 'Analisando...' : 'Enviar solução'}</span>
             </button>
+
+            {onOpenAuthModal && (
+              <AccountButton
+                user={user}
+                syncStatus={syncStatus}
+                onClick={onOpenAuthModal}
+                compact
+              />
+            )}
           </div>
         </div>
       </header>
@@ -163,15 +259,23 @@ export function TopNav({
           })}
         </nav>
 
-        {/* Zone 3: Single primary action / streak */}
-        <div className="hidden sm:flex items-center shrink-0">
+        {/* Zone 3: Streak action + Account sync */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => onSelectTab('praticar')}
-            className="rounded-lg border border-[#27272F] bg-[#141418] px-3.5 py-1.5 text-xs font-medium text-[#E4E4EA] hover:border-[#F97316]/50 hover:text-white transition-colors whitespace-nowrap shrink-0 tabular-nums"
+            className="hidden md:inline-flex rounded-lg border border-[#27272F] bg-[#141418] px-3.5 py-1.5 text-xs font-medium text-[#E4E4EA] hover:border-[#F97316]/50 hover:text-white transition-colors whitespace-nowrap shrink-0 tabular-nums"
           >
             {streakDays} dias seguidos · Praticar
           </button>
+
+          {onOpenAuthModal && (
+            <AccountButton
+              user={user}
+              syncStatus={syncStatus}
+              onClick={onOpenAuthModal}
+            />
+          )}
         </div>
       </div>
     </header>

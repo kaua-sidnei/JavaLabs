@@ -1,0 +1,254 @@
+{
+  "entities": {
+    "UserState": {
+      "title": "UserState",
+      "description": "Estado público mínimo de navegação e trilha ativa do aluno no JavaLabs (sem PII).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "UID imutável do usuário autenticado."
+        },
+        "activeTrack": {
+          "type": "string",
+          "enum": ["java", "javascript", "appscript", "python"],
+          "maxLength": 20,
+          "description": "Trilha de estudo ativa selecionada pelo aluno."
+        },
+        "currentJavaExerciseId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Último exercício aberto na trilha Java 21."
+        },
+        "currentJsExerciseId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Último exercício aberto na trilha JavaScript & TS."
+        },
+        "currentGasExerciseId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Último exercício aberto na trilha JS Dados & Logística (GAS)."
+        },
+        "currentPyExerciseId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Último exercício aberto na trilha Python."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Carimbo de data/hora do servidor (request.time)."
+        }
+      },
+      "required": [
+        "uid",
+        "activeTrack",
+        "currentJavaExerciseId",
+        "currentJsExerciseId",
+        "currentGasExerciseId",
+        "currentPyExerciseId",
+        "updatedAt"
+      ]
+    },
+    "UserPrivateProfile": {
+      "title": "UserPrivateProfile",
+      "description": "Perfil privado com informações pessoais isoladas (PII) do aluno conectado via Google.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "UID do usuário autenticado."
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254,
+          "description": "Endereço de e-mail verificado do aluno."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Nome de exibição da conta Google."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Carimbo de atualização do servidor (request.time)."
+        }
+      },
+      "required": ["uid", "email", "displayName", "updatedAt"]
+    },
+    "ActivityProgress": {
+      "title": "ActivityProgress",
+      "description": "Progresso individual por atividade/exercício do aluno no Cloud Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "UID do proprietário da atividade."
+        },
+        "id_atividade": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identificador canônico da atividade (ex.: m03-ex07, js-m1-ex01)."
+        },
+        "track": {
+          "type": "string",
+          "enum": ["java", "javascript", "appscript", "python"],
+          "maxLength": 20,
+          "description": "Trilha à qual a atividade pertence."
+        },
+        "pontuacao": {
+          "type": "number",
+          "description": "Maior pontuação de qualidade obtida pelo aluno (0 a 100)."
+        },
+        "resolvido": {
+          "type": "boolean",
+          "description": "Indica se a atividade foi concluída com aprovação nos testes."
+        },
+        "codigo_salvo": {
+          "type": "string",
+          "maxLength": 25000,
+          "description": "Último código-fonte salvo pelo aluno para esta atividade."
+        },
+        "concluido_em": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data/hora de conclusão atribuída pelo servidor (ou nulo enquanto em andamento)."
+        },
+        "atualizado_em": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Última atualização registrada pelo servidor (request.time)."
+        }
+      },
+      "required": [
+        "userId",
+        "id_atividade",
+        "track",
+        "pontuacao",
+        "resolvido",
+        "codigo_salvo",
+        "concluido_em",
+        "atualizado_em"
+      ]
+    },
+    "SubmissionHistory": {
+      "title": "SubmissionHistory",
+      "description": "Registro imutável de submissão avaliada pelo motor do JavaLabs.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "UID do autor da submissão."
+        },
+        "id_atividade": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Identificador da atividade submetida."
+        },
+        "track": {
+          "type": "string",
+          "enum": ["java", "javascript", "appscript", "python"],
+          "maxLength": 20,
+          "description": "Trilha da submissão."
+        },
+        "titulo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Título do exercício no momento do envio."
+        },
+        "dificuldade": {
+          "type": "string",
+          "enum": ["Fácil", "Médio", "Difícil"],
+          "maxLength": 20,
+          "description": "Nível de dificuldade da atividade."
+        },
+        "pontuacao": {
+          "type": "number",
+          "description": "Pontuação Copilot calculada (0 a 100)."
+        },
+        "aprovado": {
+          "type": "boolean",
+          "description": "Resultado consolidado de compilação e casos de teste."
+        },
+        "testes_passados": {
+          "type": "number",
+          "description": "Quantidade de casos de teste aprovados."
+        },
+        "testes_total": {
+          "type": "number",
+          "description": "Quantidade total de casos de teste avaliados."
+        },
+        "codigo": {
+          "type": "string",
+          "maxLength": 25000,
+          "description": "Código-fonte enviado na submissão."
+        },
+        "criado_em": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp de criação controlado pelo servidor (request.time)."
+        }
+      },
+      "required": [
+        "userId",
+        "id_atividade",
+        "track",
+        "titulo",
+        "dificuldade",
+        "pontuacao",
+        "aprovado",
+        "testes_passados",
+        "testes_total",
+        "codigo",
+        "criado_em"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserState" },
+      "description": "Estado de navegação por trilha do usuário autenticado."
+    },
+    "/users/{userId}/private/profile": {
+      "schema": { "$ref": "#/entities/UserPrivateProfile" },
+      "description": "Documento privado isolado contendo e-mail e nome do usuário."
+    },
+    "/users/{userId}/progress/{atividadeId}": {
+      "schema": { "$ref": "#/entities/ActivityProgress" },
+      "description": "Progresso e pontuação por atividade (id_atividade, pontuacao, concluido_em)."
+    },
+    "/users/{userId}/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/SubmissionHistory" },
+      "description": "Histórico imutável de envios do usuário."
+    }
+  }
+}

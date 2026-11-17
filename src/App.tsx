@@ -35,10 +35,12 @@ import {
   type PersistedLabState,
 } from './utils/labLogic';
 import { TopNav } from './components/TopNav';
+import { AuthModal } from './components/AuthModal';
 import { TrilhaView } from './components/TrilhaView';
 import { PraticarView } from './components/PraticarView';
 import { CopilotView } from './components/CopilotView';
 import { HistoricoView } from './components/HistoricoView';
+import { useAuthProgress } from './hooks/useAuthProgress';
 
 const STORAGE_KEY = 'javalabs_state_v3';
 const TRACK_ORDER: LanguageTrack[] = ['java', 'javascript', 'appscript', 'python'];
@@ -263,6 +265,7 @@ export default function App() {
   const [isGeneratingExercise, setIsGeneratingExercise] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -276,6 +279,31 @@ export default function App() {
     () => [...EXERCISES, ...persisted.customExercises],
     [persisted.customExercises]
   );
+
+  const {
+    user,
+    isAuthenticating,
+    syncStatus,
+    lastSyncedAt,
+    cloudActivityCount,
+    authError,
+    syncError,
+    bestScores,
+    clearAuthError,
+    clearSyncError,
+    loginWithGoogle,
+    logout,
+    syncActivityImmediate,
+    syncActivityDebounced,
+    syncSubmission,
+    syncTrackPreference,
+    resyncNow,
+  } = useAuthProgress({
+    persisted,
+    allExercises,
+    defaultsByTrack: DEFAULT_BY_TRACK,
+    onApplyMergedState: (merged) => setPersisted(merged),
+  });
 
   const solvedSet = useMemo(
     () => new Set(persisted.solvedIds),
@@ -387,14 +415,16 @@ export default function App() {
   const handleSelectTrack = (track: LanguageTrack) => {
     setWorkspaceError(null);
     setGenerateError(null);
-    setPersisted((prev) => {
-      const targetExId =
-        prev.currentExerciseByTrack[track] ?? TRACK_METADATA[track].defaultExerciseId;
-      return {
-        ...prev,
-        activeTrack: track,
-        currentExerciseId: targetExId,
-      };
+    const targetExId =
+      persisted.currentExerciseByTrack[track] ?? TRACK_METADATA[track].defaultExerciseId;
+    setPersisted((prev) => ({
+      ...prev,
+      activeTrack: track,
+      currentExerciseId: targetExId,
+    }));
+    void syncTrackPreference({
+      activeTrack: track,
+      currentExerciseByTrack: persisted.currentExerciseByTrack,
     });
   };
 
@@ -402,16 +432,21 @@ export default function App() {
     setWorkspaceError(null);
     const target = allExercises.find((ex) => ex.id === exerciseId);
     const targetTrack = target?.track ?? activeTrack;
+    const nextByTrack = {
+      ...persisted.currentExerciseByTrack,
+      [targetTrack]: exerciseId,
+    };
     setPersisted((prev) => ({
       ...prev,
       activeTrack: targetTrack,
       currentExerciseId: exerciseId,
-      currentExerciseByTrack: {
-        ...prev.currentExerciseByTrack,
-        [targetTrack]: exerciseId,
-      },
+      currentExerciseByTrack: nextByTrack,
     }));
     setActiveTab('praticar');
+    void syncTrackPreference({
+      activeTrack: targetTrack,
+      currentExerciseByTrack: nextByTrack,
+    });
   };
 
   const handleSelectModule = (moduleId: number) => {
@@ -447,6 +482,16 @@ export default function App() {
         [currentExercise.id]: nextCode,
       },
     }));
+
+    const isCurrentSolved = solvedSet.has(currentExercise.id);
+    const currentBest = bestScores[currentExercise.id] ?? staticAnalysis.qualityScore;
+    syncActivityDebounced({
+      id_atividade: currentExercise.id,
+      track: currentExercise.track,
+      pontuacao: isCurrentSolved ? currentBest : staticAnalysis.qualityScore,
+      resolvido: isCurrentSolved,
+      codigo_salvo: nextCode,
+    });
   };
 
   const handleResetCode = () => {
@@ -468,6 +513,15 @@ export default function App() {
         ...prev,
         codeByExercise: nextMap,
       };
+    });
+
+    const isCurrentSolved = solvedSet.has(currentExercise.id);
+    syncActivityDebounced({
+      id_atividade: currentExercise.id,
+      track: currentExercise.track,
+      pontuacao: isCurrentSolved ? (bestScores[currentExercise.id] ?? 0) : 0,
+      resolvido: isCurrentSolved,
+      codigo_salvo: currentExercise.starterCode,
     });
   };
 
@@ -539,6 +593,11 @@ export default function App() {
         improvementsForEnunciado: improvements,
       };
 
+      const solvedNow = Boolean(
+        solvedSet.has(currentExercise.id) ||
+          (mode === 'submit' && evalResult.compiled && evalResult.allPassed)
+      );
+
       setPersisted((prev) => {
         const nextSolved = new Set(prev.solvedIds);
         if (mode === 'submit' && evalResult.compiled && evalResult.allPassed) {
@@ -549,6 +608,14 @@ export default function App() {
           solvedIds: Array.from(nextSolved),
           submissions: [newSubmission, ...prev.submissions].slice(0, 50),
         };
+      });
+
+      void syncSubmission(newSubmission, {
+        id_atividade: currentExercise.id,
+        track: currentExercise.track,
+        pontuacao: Math.max(bestScores[currentExercise.id] ?? 0, score),
+        resolvido: solvedNow,
+        codigo_salvo: currentCode,
       });
     } catch (err) {
       setWorkspaceError(
@@ -577,6 +644,11 @@ export default function App() {
         throw new Error(data.error || 'Falha ao revisar código com Copilot.');
       }
 
+      const nextScore =
+        typeof data.qualityScore === 'number'
+          ? data.qualityScore
+          : staticAnalysis.qualityScore;
+
       setAiReviewByExercise((prev) => ({
         ...prev,
         [currentExercise.id]: {
@@ -584,12 +656,17 @@ export default function App() {
           improvements: Array.isArray(data.improvementsForEnunciado)
             ? data.improvementsForEnunciado
             : [],
-          qualityScore:
-            typeof data.qualityScore === 'number'
-              ? data.qualityScore
-              : staticAnalysis.qualityScore,
+          qualityScore: nextScore,
         },
       }));
+
+      void syncActivityImmediate({
+        id_atividade: currentExercise.id,
+        track: currentExercise.track,
+        pontuacao: Math.max(bestScores[currentExercise.id] ?? 0, nextScore),
+        resolvido: solvedSet.has(currentExercise.id),
+        codigo_salvo: currentCode,
+      });
     } catch (err) {
       setWorkspaceError(
         err instanceof Error ? err.message : 'Erro ao consultar revisão do Copilot.'
@@ -782,7 +859,31 @@ export default function App() {
         onRunTests={() => handleEvaluate('run')}
         onSubmitSolution={() => handleEvaluate('submit')}
         isEvaluating={isEvaluating}
+        user={user}
+        syncStatus={syncStatus}
+        onOpenAuthModal={() => {
+          clearAuthError();
+          setIsAuthModalOpen(true);
+        }}
       />
+
+      {syncError && (
+        <div
+          role="status"
+          className="border-b border-[#EF4444]/30 bg-[#EF4444]/10 px-4 py-2 text-xs text-[#FCA5A5]"
+        >
+          <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4">
+            <span>{syncError}</span>
+            <button
+              type="button"
+              onClick={clearSyncError}
+              className="text-[#FCA5A5] hover:text-white underline underline-offset-2 whitespace-nowrap"
+            >
+              Dispensar
+            </button>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'trilha' && (
         <TrilhaView
@@ -865,6 +966,26 @@ export default function App() {
           onReopenSubmission={handleReopenSubmission}
         />
       )}
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        user={user}
+        isAuthenticating={isAuthenticating}
+        syncStatus={syncStatus}
+        lastSyncedAt={lastSyncedAt}
+        solvedCount={persisted.solvedIds.length}
+        cloudActivityCount={cloudActivityCount}
+        authError={authError}
+        syncError={syncError}
+        onLoginGoogle={loginWithGoogle}
+        onLogout={logout}
+        onResync={resyncNow}
+        onClearError={() => {
+          clearAuthError();
+          clearSyncError();
+        }}
+      />
     </div>
   );
 }
