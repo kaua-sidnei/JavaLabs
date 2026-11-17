@@ -61,6 +61,7 @@ service cloud.firestore {
           'currentJsExerciseId',
           'currentGasExerciseId',
           'currentPyExerciseId',
+          'resetEpoch',
           'updatedAt'
         ]) &&
         isValidId(data.uid) &&
@@ -71,6 +72,7 @@ service cloud.firestore {
         isValidId(data.currentJsExerciseId) &&
         isValidId(data.currentGasExerciseId) &&
         isValidId(data.currentPyExerciseId) &&
+        (!('resetEpoch' in data) || (data.resetEpoch is int && data.resetEpoch >= 0 && data.resetEpoch <= 1000)) &&
         data.updatedAt is timestamp &&
         data.updatedAt == request.time;
     }
@@ -172,16 +174,18 @@ service cloud.firestore {
       allow list: if false;
       allow create: if isOwner(userId) && isValidId(userId) && isValidUserState(incoming(), userId);
       allow update: if isOwner(userId) && isValidId(userId) && isValidUserState(incoming(), userId) && (
-        // Ação: atualizar trilha ativa ou exercício selecionado
+        // Ação: atualizar trilha ativa, exercício selecionado ou época de reset
         incoming().diff(existing()).affectedKeys().hasOnly([
           'activeTrack',
           'currentJavaExerciseId',
           'currentJsExerciseId',
           'currentGasExerciseId',
           'currentPyExerciseId',
+          'resetEpoch',
           'updatedAt'
         ]) &&
-        incoming().uid == existing().uid
+        incoming().uid == existing().uid &&
+        (!('resetEpoch' in existing()) || ('resetEpoch' in incoming() && incoming().resetEpoch >= existing().resetEpoch))
       );
       allow delete: if false;
 
@@ -227,17 +231,18 @@ service cloud.firestore {
               incoming().pontuacao >= existing().pontuacao &&
               incoming().diff(existing()).affectedKeys().hasOnly(['codigo_salvo', 'pontuacao', 'atualizado_em']))
           );
-        allow delete: if false;
+        allow delete: if isValidId(userId) && isValidId(atividadeId) && isOwner(userId);
       }
 
-      // Subcoleção: Histórico Imutável de Submissões
+      // Subcoleção: Histórico Imutável de Submissões (exceto reset pelo próprio usuário)
       match /submissions/{submissionId} {
         allow get: if isValidId(userId) && isValidId(submissionId) && isOwner(userId) &&
           exists(/databases/$(database)/documents/users/$(userId));
         allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
         allow create: if isOwner(userId) && isValidId(userId) && isValidId(submissionId) &&
           isValidSubmission(incoming(), userId) && hasUserParent(userId);
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(submissionId) && isOwner(userId);
       }
     }
   }

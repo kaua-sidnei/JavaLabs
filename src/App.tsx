@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ALL_MODULES,
   EXERCISES,
-  INITIAL_COPILOT_FINDINGS_M03_EX07,
   INITIAL_SOLVED_EXERCISE_IDS,
   INITIAL_SUBMISSIONS,
   RECOMMENDED_MATERIALS,
@@ -41,8 +40,9 @@ import { PraticarView } from './components/PraticarView';
 import { CopilotView } from './components/CopilotView';
 import { HistoricoView } from './components/HistoricoView';
 import { useAuthProgress } from './hooks/useAuthProgress';
+import { createEmptyPersistedState } from './utils/cloudMerge';
 
-const STORAGE_KEY = 'javalabs_state_v3';
+const STORAGE_KEY = 'javalabs_state_v4';
 const TRACK_ORDER: LanguageTrack[] = ['java', 'javascript', 'appscript', 'python'];
 const ALL_TRACKS = TRACK_ORDER.map((id) => TRACK_METADATA[id]);
 const VALID_EXERCISE_IDS = new Set(EXERCISES.map((ex) => ex.id));
@@ -198,9 +198,9 @@ const DEFAULT_PATTERNS_BY_TRACK: Record<LanguageTrack, RecurringPattern[]> = {
 
 function loadInitialState(): PersistedLabState {
   try {
-    const v3Raw = localStorage.getItem(STORAGE_KEY);
-    if (v3Raw) {
-      return migratePersistedState(v3Raw, {
+    const v4Raw = localStorage.getItem(STORAGE_KEY);
+    if (v4Raw) {
+      return migratePersistedState(v4Raw, {
         isLegacyVersion: false,
         validExerciseIds: VALID_EXERCISE_IDS,
         defaultByTrack: DEFAULT_BY_TRACK,
@@ -208,23 +208,13 @@ function loadInitialState(): PersistedLabState {
         initialJavaSubmissions: INITIAL_SUBMISSIONS,
       });
     }
-    const legacyRaw =
-      localStorage.getItem('javalabs_state_v2') ?? localStorage.getItem('javalabs_state_v1');
-    return migratePersistedState(legacyRaw, {
-      isLegacyVersion: true,
-      validExerciseIds: VALID_EXERCISE_IDS,
-      defaultByTrack: DEFAULT_BY_TRACK,
-      initialSolvedJavaIds: INITIAL_SOLVED_EXERCISE_IDS,
-      initialJavaSubmissions: INITIAL_SUBMISSIONS,
-    });
+    // Remove chaves antigas que continham seed demonstrativo pré-marcado
+    localStorage.removeItem('javalabs_state_v3');
+    localStorage.removeItem('javalabs_state_v2');
+    localStorage.removeItem('javalabs_state_v1');
+    return createEmptyPersistedState(DEFAULT_BY_TRACK);
   } catch {
-    return migratePersistedState(null, {
-      isLegacyVersion: false,
-      validExerciseIds: VALID_EXERCISE_IDS,
-      defaultByTrack: DEFAULT_BY_TRACK,
-      initialSolvedJavaIds: INITIAL_SOLVED_EXERCISE_IDS,
-      initialJavaSubmissions: INITIAL_SUBMISSIONS,
-    });
+    return createEmptyPersistedState(DEFAULT_BY_TRACK);
   }
 }
 
@@ -275,13 +265,7 @@ export default function App() {
         qualityScore: number;
       }
     >
-  >(() => ({
-    'm03-ex07': {
-      findings: INITIAL_COPILOT_FINDINGS_M03_EX07,
-      improvements: INITIAL_SUBMISSIONS[2].improvementsForEnunciado,
-      qualityScore: 35,
-    },
-  }));
+  >({});
   const [chatByExercise, setChatByExercise] = useState<
     Record<string, CopilotChatMessage[]>
   >({});
@@ -324,12 +308,31 @@ export default function App() {
     syncSubmission,
     syncTrackPreference,
     resyncNow,
+    resetAccountProgress,
   } = useAuthProgress({
     persisted,
     allExercises,
     defaultsByTrack: DEFAULT_BY_TRACK,
     onApplyMergedState: (merged) => setPersisted(merged),
   });
+
+  const handleResetAllProgress = async () => {
+    setWorkspaceError(null);
+    setGenerateError(null);
+    setEvaluationByExercise({});
+    setAiReviewByExercise({});
+    setChatByExercise({});
+    try {
+      localStorage.removeItem('javalabs_state_v3');
+      localStorage.removeItem('javalabs_state_v2');
+      localStorage.removeItem('javalabs_state_v1');
+    } catch {
+      // Ignore storage errors
+    }
+    return resetAccountProgress((emptyState) => {
+      setPersisted(emptyState);
+    });
+  };
 
   const solvedSet = useMemo(
     () => new Set(persisted.solvedIds),
@@ -1014,6 +1017,7 @@ export default function App() {
         onLoginGoogle={loginWithGoogle}
         onLogout={logout}
         onResync={resyncNow}
+        onResetProgress={handleResetAllProgress}
         onClearError={() => {
           clearAuthError();
           clearSyncError();

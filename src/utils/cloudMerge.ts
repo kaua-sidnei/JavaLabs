@@ -19,6 +19,8 @@ export const FIREBASE_CONSTRAINTS = {
   MAX_SCORE: 100,
 } as const;
 
+export const CURRENT_RESET_EPOCH = 1;
+
 export interface CloudActivityRecord {
   userId: string;
   id_atividade: string;
@@ -37,6 +39,21 @@ export interface CloudUserStateRecord {
   currentJsExerciseId: string;
   currentGasExerciseId: string;
   currentPyExerciseId: string;
+  resetEpoch?: number;
+}
+
+export function createEmptyPersistedState(
+  defaultsByTrack: Record<LanguageTrack, string>
+): PersistedLabState {
+  return {
+    activeTrack: 'java',
+    solvedIds: [],
+    submissions: [],
+    codeByExercise: {},
+    customExercises: [],
+    currentExerciseId: defaultsByTrack.java,
+    currentExerciseByTrack: { ...defaultsByTrack },
+  };
 }
 
 export interface ProgressUploadCandidate {

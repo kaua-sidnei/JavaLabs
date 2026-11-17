@@ -4,6 +4,8 @@ import { EXERCISES, TRACK_METADATA } from '../data/curriculum.ts';
 import type { LanguageTrack, SubmissionRecord } from '../types/javalab.ts';
 import {
   clampScore,
+  createEmptyPersistedState,
+  CURRENT_RESET_EPOCH,
   FIREBASE_CONSTRAINTS,
   isValidFirebaseId,
   mergeLocalAndCloudState,
@@ -142,3 +144,15 @@ test('mergeLocalAndCloudState une progresso local e remoto mantendo maior pontua
     ['sub-local-1']
   );
 });
+
+test('createEmptyPersistedState inicia conta zerada sem progresso demonstrativo', () => {
+  assert.ok(CURRENT_RESET_EPOCH >= 1);
+  const empty = createEmptyPersistedState(DEFAULTS_BY_TRACK);
+  assert.equal(empty.activeTrack, 'java');
+  assert.deepEqual(empty.solvedIds, []);
+  assert.deepEqual(empty.submissions, []);
+  assert.deepEqual(empty.codeByExercise, {});
+  assert.deepEqual(empty.customExercises, []);
+  assert.equal(empty.currentExerciseByTrack.java, DEFAULTS_BY_TRACK.java);
+});
+

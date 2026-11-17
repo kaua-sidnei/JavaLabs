@@ -8,6 +8,7 @@
 4. **Integridade Temporal**: Todos os campos `updatedAt`, `atualizado_em`, `criado_em` e novos valores de `concluido_em` devem ser idênticos a `request.time`. Uma vez concluída a atividade (`resolvido == true`), `concluido_em` e `resolvido == true` são imutáveis.
 5. **Limites Volumétricos e Regex de IDs**: Todos os IDs de rota e payload devem casar com `^[a-zA-Z0-9_-]+$` (`<= 128` chars); código salvo limitado a `25000` chars; `pontuacao` restrita ao intervalo `[0, 100]`.
 6. **Zero Shadow Fields**: Todos os writes validam `keys().hasAll(...)` e `keys().hasOnly(...)` na criação e `affectedKeys().hasOnly(...)` em atualizações por ação.
+7. **Reset Auditável pelo Proprietário**: Exclusão em `/progress/{atividadeId}` e `/submissions/{submissionId}` é permitida exclusivamente ao próprio dono verificado (`isOwner(userId)` + `isValidId`), e `resetEpoch` em `users/{userId}` é inteiro não-negativo monotônico (`0 <= resetEpoch <= 1000`).
 
 ## 2. "Dirty Dozen" Payloads (Vetores de Ataque Esperados -> PERMISSION_DENIED)
 

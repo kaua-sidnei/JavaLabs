@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   AlertCircle,
@@ -10,6 +10,7 @@ import {
   LogOut,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   X,
 } from 'lucide-react';
 import type { CloudSyncStatus } from '../hooks/useAuthProgress';
@@ -28,6 +29,7 @@ interface AuthModalProps {
   onLoginGoogle: () => Promise<boolean>;
   onLogout: () => Promise<void>;
   onResync: () => Promise<void>;
+  onResetProgress: () => Promise<boolean>;
   onClearError: () => void;
 }
 
@@ -58,10 +60,17 @@ export function AuthModal({
   onLoginGoogle,
   onLogout,
   onResync,
+  onResetProgress,
   onClearError,
 }: AuthModalProps) {
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setConfirmingReset(false);
+      return;
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
@@ -73,7 +82,7 @@ export function AuthModal({
 
   if (!isOpen) return null;
 
-  const isBusy = isAuthenticating || syncStatus === 'syncing';
+  const isBusy = isAuthenticating || syncStatus === 'syncing' || isResetting;
   const activeError = authError || syncError;
   const appUrl = typeof window !== 'undefined' ? window.location.href : '';
   const isInsideIframe = typeof window !== 'undefined' && window.self !== window.top;
@@ -214,6 +223,49 @@ export function AuthModal({
                   <span>Abrir aplicativo em uma nova aba</span>
                 </a>
               )}
+
+              <div className="pt-2 border-t border-[#222228]">
+                {!confirmingReset ? (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => setConfirmingReset(true)}
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-[#8C8C9B] hover:bg-[#1B1B20] hover:text-[#FCA5A5] transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Resetar progresso salvo neste navegador</span>
+                  </button>
+                ) : (
+                  <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 space-y-2">
+                    <p className="text-[11px] leading-relaxed text-[#FCA5A5]">
+                      Isso apagará atividades concluídas, histórico e rascunhos locais deste navegador.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={async () => {
+                          setIsResetting(true);
+                          await onResetProgress();
+                          setIsResetting(false);
+                          setConfirmingReset(false);
+                        }}
+                        className="flex-1 rounded-md bg-[#EF4444] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#DC2626] disabled:opacity-50 transition-colors"
+                      >
+                        {isResetting ? 'Resetando...' : 'Confirmar reset'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => setConfirmingReset(false)}
+                        className="rounded-md border border-[#2A2A32] bg-[#141417] px-2.5 py-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : (
@@ -316,6 +368,50 @@ export function AuthModal({
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Sair</span>
               </button>
+            </div>
+
+            <div className="pt-2 border-t border-[#222228]">
+              {!confirmingReset ? (
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  onClick={() => setConfirmingReset(true)}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-[#8C8C9B] hover:bg-[#1B1B20] hover:text-[#FCA5A5] transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Resetar progresso da conta</span>
+                </button>
+              ) : (
+                <div className="rounded-lg border border-[#EF4444]/30 bg-[#EF4444]/10 p-3 space-y-2">
+                  <p className="text-[11px] leading-relaxed text-[#FCA5A5]">
+                    Isso apagará todo o histórico, pontuações e códigos salvos desta conta no navegador e na nuvem.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={async () => {
+                        setIsResetting(true);
+                        const ok = await onResetProgress();
+                        setIsResetting(false);
+                        setConfirmingReset(false);
+                        if (ok) onClose();
+                      }}
+                      className="flex-1 rounded-md bg-[#EF4444] px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-[#DC2626] disabled:opacity-50 transition-colors"
+                    >
+                      {isResetting ? 'Limpando nuvem...' : 'Confirmar reset'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isBusy}
+                      onClick={() => setConfirmingReset(false)}
+                      className="rounded-md border border-[#2A2A32] bg-[#141417] px-2.5 py-1.5 text-xs font-medium text-[#A1A1AA] hover:text-white transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

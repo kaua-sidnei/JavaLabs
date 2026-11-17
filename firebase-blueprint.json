@@ -46,6 +46,10 @@
           "maxLength": 128,
           "description": "Último exercício aberto na trilha Python."
         },
+        "resetEpoch": {
+          "type": "number",
+          "description": "Versão de reset global aplicada à conta."
+        },
         "updatedAt": {
           "type": "string",
           "format": "date-time",

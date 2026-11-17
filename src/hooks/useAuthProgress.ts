@@ -3,10 +3,12 @@ import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebas
 import type { Exercise, LanguageTrack, SubmissionRecord } from '../types/javalab';
 import type { PersistedLabState } from '../utils/labLogic';
 import { auth, googleProvider } from '../lib/firebase';
+import { createEmptyPersistedState } from '../utils/cloudMerge';
 import {
   clearCloudSessionCache,
   mesclarProgressoLocalComNuvem,
   registrarSubmissaoNuvem,
+  resetarProgressoContaNuvem,
   salvarPreferenciaTrilha,
   salvarProgressoAtividade,
   type SaveActivityProgressInput,
@@ -94,10 +96,12 @@ export function useAuthProgress({
         setSyncStatus('synced');
       } catch (err) {
         setSyncStatus('error');
-        const msg =
-          err instanceof Error && err.message.includes('Quota exceeded')
-            ? 'Cota gratuita do Firestore atingida hoje. Seu código continua salvo localmente.'
-            : 'Falha ao sincronizar com a nuvem. Suas alterações seguem salvas localmente.';
+        const rawMsg = err instanceof Error ? err.message : '';
+        const msg = rawMsg.includes('Quota exceeded')
+          ? 'Cota gratuita do Firestore atingida hoje. Seu código continua salvo localmente.'
+          : rawMsg.includes('permission-denied') || rawMsg.includes('Missing or insufficient permissions')
+          ? 'Permissão negada no Firestore ao sincronizar/resetar. Publique as regras atualizadas no Firebase Console.'
+          : 'Falha ao sincronizar com a nuvem. Suas alterações seguem salvas localmente.';
         setSyncError(msg);
       }
     },
@@ -275,6 +279,44 @@ export function useAuthProgress({
     await runCloudMergeForUser(currentUser);
   }, [runCloudMergeForUser]);
 
+  const resetAccountProgress = useCallback(
+    async (onResetLocal: (emptyState: PersistedLabState) => void): Promise<boolean> => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
+
+      const emptyState = createEmptyPersistedState(defaultsByTrack);
+      onResetLocal(emptyState);
+      setBestScores({});
+      setCloudActivityCount(0);
+      setSyncError(null);
+
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        return true;
+      }
+
+      setSyncStatus('syncing');
+      try {
+        await resetarProgressoContaNuvem(currentUser, defaultsByTrack);
+        setLastSyncedAt(new Date().toISOString());
+        setSyncStatus('synced');
+        return true;
+      } catch (err) {
+        setSyncStatus('error');
+        const rawMsg = err instanceof Error ? err.message : '';
+        setSyncError(
+          rawMsg.includes('permission-denied') || rawMsg.includes('Missing or insufficient permissions')
+            ? 'Progresso local zerado, mas o Firestore recusou apagar documentos antigos. Atualize as regras no Firebase Console.'
+            : 'Progresso local zerado, mas houve erro ao limpar os dados na nuvem.'
+        );
+        return false;
+      }
+    },
+    [defaultsByTrack]
+  );
+
   return {
     user,
     authReady,
@@ -294,5 +336,6 @@ export function useAuthProgress({
     syncSubmission,
     syncTrackPreference,
     resyncNow,
+    resetAccountProgress,
   };
 }

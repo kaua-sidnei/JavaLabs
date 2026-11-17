@@ -10,6 +10,7 @@ import {
   Timestamp,
   where,
   writeBatch,
+  type DocumentReference,
   type WriteBatch,
 } from 'firebase/firestore';
 import type { Exercise, LanguageTrack, SubmissionRecord } from '../types/javalab';
@@ -17,6 +18,8 @@ import type { PersistedLabState } from '../utils/labLogic';
 import {
   clampScore,
   clampTestCount,
+  createEmptyPersistedState,
+  CURRENT_RESET_EPOCH,
   FIREBASE_CONSTRAINTS,
   isValidDifficultyValue,
   isValidFirebaseId,
@@ -71,6 +74,7 @@ function buildUserStatePayload(
     currentJsExerciseId: sanitizeFirebaseId(state.currentExerciseByTrack.javascript, defaultsByTrack.javascript),
     currentGasExerciseId: sanitizeFirebaseId(state.currentExerciseByTrack.appscript, defaultsByTrack.appscript),
     currentPyExerciseId: sanitizeFirebaseId(state.currentExerciseByTrack.python, defaultsByTrack.python),
+    resetEpoch: CURRENT_RESET_EPOCH,
     updatedAt: serverTimestamp(),
   };
 }
@@ -90,6 +94,7 @@ function ensureUserParentInBatch(
       currentJsExerciseId: payload.currentJsExerciseId,
       currentGasExerciseId: payload.currentGasExerciseId,
       currentPyExerciseId: payload.currentPyExerciseId,
+      resetEpoch: CURRENT_RESET_EPOCH,
       updatedAt: serverTimestamp(),
     });
   } else {
@@ -148,6 +153,7 @@ export async function buscarProgressoUsuario(
         currentJsExerciseId: String(raw.currentJsExerciseId ?? ''),
         currentGasExerciseId: String(raw.currentGasExerciseId ?? ''),
         currentPyExerciseId: String(raw.currentPyExerciseId ?? ''),
+        resetEpoch: typeof raw.resetEpoch === 'number' ? raw.resetEpoch : 0,
       };
     } else {
       knownUserParentExists.delete(uid);
@@ -389,9 +395,127 @@ export async function registrarSubmissaoNuvem(
   }
 }
 
+async function upsertPrivateProfileInBatch(
+  batch: WriteBatch,
+  user: User
+) {
+  const uid = user.uid;
+  const email = (user.email ?? 'aluno@javalabs.dev')
+    .trim()
+    .slice(0, FIREBASE_CONSTRAINTS.MAX_EMAIL_LEN);
+  const displayName =
+    (user.displayName ?? 'Estudante JavaLabs')
+      .trim()
+      .slice(0, FIREBASE_CONSTRAINTS.MAX_DISPLAY_NAME_LEN) || 'Estudante JavaLabs';
+
+  let privateExists = false;
+  const privatePath = `users/${uid}/private/profile`;
+  try {
+    const privateSnap = await getDoc(doc(db, 'users', uid, 'private', 'profile'));
+    privateExists = privateSnap.exists();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, privatePath);
+  }
+
+  const privateRef = doc(db, 'users', uid, 'private', 'profile');
+  if (privateExists) {
+    batch.update(privateRef, {
+      email,
+      displayName,
+      updatedAt: serverTimestamp(),
+    });
+  } else {
+    batch.set(privateRef, {
+      uid,
+      email,
+      displayName,
+      updatedAt: serverTimestamp(),
+    });
+  }
+}
+
 /**
- * Busca progresso existente na nuvem ao carregar/logar, mescla com o estado local
- * sem perder atividades concluídas em nenhuma das pontas e envia o delta em lote.
+ * Remove todo progresso e submissões de uma conta autenticada no Firestore
+ * e redefine a preferência do usuário com a época de reset atual.
+ */
+export async function resetarProgressoContaNuvem(
+  user: User,
+  defaultsByTrack: Record<LanguageTrack, string>
+): Promise<{
+  mergedState: PersistedLabState;
+  bestScores: Record<string, number>;
+  cloudCount: number;
+}> {
+  const uid = user.uid;
+  if (!isValidFirebaseId(uid)) {
+    throw new Error('Identificador de usuário inválido.');
+  }
+
+  const emptyState = createEmptyPersistedState(defaultsByTrack);
+
+  // Garante estado conhecido do documento pai para create vs update
+  if (!knownUserParentExists.has(uid)) {
+    try {
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      if (userSnap.exists()) {
+        knownUserParentExists.add(uid);
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, `users/${uid}`);
+    }
+  }
+
+  // Coleta todos os documentos em progress e submissions para remoção em lote
+  const refsToDelete: DocumentReference[] = [];
+  try {
+    const progressSnap = await getDocs(
+      query(collection(db, 'users', uid, 'progress'), where('userId', '==', uid), limit(500))
+    );
+    progressSnap.forEach((d) => refsToDelete.push(d.ref));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, `users/${uid}/progress`);
+  }
+
+  try {
+    const submissionsSnap = await getDocs(
+      query(collection(db, 'users', uid, 'submissions'), where('userId', '==', uid), limit(500))
+    );
+    submissionsSnap.forEach((d) => refsToDelete.push(d.ref));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, `users/${uid}/submissions`);
+  }
+
+  try {
+    const CHUNK = 400;
+    for (let i = 0; i < refsToDelete.length; i += CHUNK) {
+      const delBatch = writeBatch(db);
+      for (const ref of refsToDelete.slice(i, i + CHUNK)) {
+        delBatch.delete(ref);
+      }
+      await delBatch.commit();
+    }
+
+    const stateBatch = writeBatch(db);
+    ensureUserParentInBatch(stateBatch, uid, emptyState, defaultsByTrack);
+    await upsertPrivateProfileInBatch(stateBatch, user);
+    await stateBatch.commit();
+    knownUserParentExists.add(uid);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `users/${uid}`);
+  }
+
+  getKnownProgressCache(uid).clear();
+
+  return {
+    mergedState: emptyState,
+    bestScores: {},
+    cloudCount: 0,
+  };
+}
+
+/**
+ * Busca progresso existente na nuvem ao carregar/logar.
+ * Contas criadas antes da época de reset atual têm seu progresso anterior limpo automaticamente.
  */
 export async function mesclarProgressoLocalComNuvem(
   user: User,
@@ -402,9 +526,24 @@ export async function mesclarProgressoLocalComNuvem(
   mergedState: PersistedLabState;
   bestScores: Record<string, number>;
   cloudCount: number;
+  wasAutoReset?: boolean;
 }> {
   const uid = user.uid;
   const loaded = await buscarProgressoUsuario(uid, exerciseCatalog);
+
+  const cloudResetEpoch = loaded.userState?.resetEpoch ?? 0;
+  const hasAnyCloudData =
+    loaded.userState !== null ||
+    Object.keys(loaded.progressByActivity).length > 0 ||
+    loaded.submissions.length > 0;
+
+  if (hasAnyCloudData && cloudResetEpoch < CURRENT_RESET_EPOCH) {
+    const resetResult = await resetarProgressoContaNuvem(user, defaultsByTrack);
+    return {
+      ...resetResult,
+      wasAutoReset: true,
+    };
+  }
 
   const { mergedState, bestScores, progressToUpload, submissionsToUpload } =
     mergeLocalAndCloudState({
@@ -416,40 +555,10 @@ export async function mesclarProgressoLocalComNuvem(
       defaultsByTrack,
     });
 
-  const email = (user.email ?? 'aluno@javalabs.dev').trim().slice(0, FIREBASE_CONSTRAINTS.MAX_EMAIL_LEN);
-  const displayName = (user.displayName ?? 'Estudante JavaLabs')
-    .trim()
-    .slice(0, FIREBASE_CONSTRAINTS.MAX_DISPLAY_NAME_LEN) || 'Estudante JavaLabs';
-
-  // Verifica se o documento privado de perfil já existe para respeitar create vs update
-  let privateExists = false;
-  const privatePath = `users/${uid}/private/profile`;
-  try {
-    const privateSnap = await getDoc(doc(db, 'users', uid, 'private', 'profile'));
-    privateExists = privateSnap.exists();
-  } catch (error) {
-    handleFirestoreError(error, OperationType.GET, privatePath);
-  }
-
   try {
     const batch = writeBatch(db);
     ensureUserParentInBatch(batch, uid, mergedState, defaultsByTrack);
-
-    const privateRef = doc(db, 'users', uid, 'private', 'profile');
-    if (privateExists) {
-      batch.update(privateRef, {
-        email,
-        displayName,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      batch.set(privateRef, {
-        uid,
-        email,
-        displayName,
-        updatedAt: serverTimestamp(),
-      });
-    }
+    await upsertPrivateProfileInBatch(batch, user);
 
     // Lote limitado para manter abaixo do teto de 500 operações do Firestore
     const progressQueue = progressToUpload.slice(0, 200);
@@ -485,5 +594,6 @@ export async function mesclarProgressoLocalComNuvem(
     mergedState,
     bestScores,
     cloudCount: getKnownProgressCache(uid).size,
+    wasAutoReset: false,
   };
 }
